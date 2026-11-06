@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="km">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ប្រព័ន្ធមេក្រូហៅឈ្មោះ (ច្រើនទូរស័ព្ទ)</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+</head>
+<body>
+    <link rel="stylesheet" href="syt.css">
+<div class="container">
+    <h2>📢 ប្រព័ន្ធមេក្រូហៅឈ្មោះ</h2>
+    <!-- ជ្រើសរើសតួនាទី -->
+    <div class="role-selection">
+        <button class="role-btn" id="btnRoleSpeaker" onclick="setRole('receiver')">🔊 ទូរស័ព្ទអ្នកស្តាប់<br><small>(ដាក់តាមបន្ទប់)</small></button>
+        <button class="role-btn" id="btnRoleMic" onclick="setRole('sender')">🎙️ ទូរស័ព្ទអ្នកនិយាយ<br><small>(អ្នកហៅឈ្មោះ)</small></button>
+    </div>
+
+    <!-- ១. សម្រាប់ទូរស័ព្ទអ្នកស្តាប់ (Receiver) -->
+    <div id="receiverBox" class="box">
+        <div style="text-align: center;">
+            <div id="listenStatus" class="status-badge status-off">រង់ចាំការភ្ជាប់...</div>
+            <p style="font-size: 13px; color: #666;">ផ្ញើ ID ខាងក្រោមនេះទៅឱ្យទូរស័ព្ទអ្នកហៅឈ្មោះ៖</p>
+            <div class="id-display" id="myReceiverId">กำลังបង្កើត ID...</div>
+        </div>
+        <audio id="audioPlayer" autoplay style="display:none;"></audio>
+    </div>
+
+    <!-- ២. សម្រាប់ទូរស័ព្ទអ្នកហៅឈ្មោះ (Sender) -->
+    <div id="senderBox" class="box">
+        <div style="text-align: center;">
+            <div id="sendStatus" class="status-badge status-off">មិនទាន់ភ្ជាប់</div>
+        </div>
+        
+        <label style="font-size: 13px; font-weight: bold;">បញ្ចូល ID ទូរស័ព្ទអ្នកស្តាប់៖</label>
+        <div style="display: flex; gap: 5px;">
+            <input type="text" id="receiverIdInput" placeholder="ឧទាហរណ៍៖ a1b2c3d4">
+            <button onclick="addReceiver()" style="padding: 10px 15px; background: #16a34a; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold;">➕ បន្ថែម</button>
+        </div>
+
+        <p style="font-size: 13px; margin: 8px 0 3px 0; font-weight: bold;">បញ្ជីទូរស័ព្ទអ្នកស្តាប់ដែលបានបន្ថែម៖</p>
+        <ul id="receiverList">
+            <i style="color: #999;">នៅមិនទាន់មានទូរស័ព្ទអ្នកស្តាប់</i>
+        </ul>
+
+        <button class="action-btn" onclick="connectAllReceivers()">🔗 ចុចភ្ជាប់ជាមួយអ្នកស្តាប់ទាំងអស់</button>
+
+        <div id="micControls" style="display: none; text-align: center;">
+            <button id="talkBtn" class="btn-talk" 
+                    onmousedown="startSpeech()" onmouseup="stopSpeech()" 
+                    ontouchstart="startSpeech(event)" ontouchend="stopSpeech(event)">
+                🎙️ ចុចឱ្យជាប់<br>ដើម្បីនិយាយ
+            </button>
+            <p style="font-size: 11px; color: #777; margin-top: 8px;">ចុចឱ្យជាប់ពេលនិយាយ លែងដៃវិញពេលនិយាយរួច</p>
+        </div>
+    </div>
+</div>
+
+<script>
+    let peer;
+    let localStream;
+    let receiverIds = [];
+    let activeCalls = [];
+
+    function setRole(role) {
+        document.getElementById('btnRoleSpeaker').classList.toggle('active', role === 'receiver');
+        document.getElementById('btnRoleMic').classList.toggle('active', role === 'sender');
+        document.getElementById('receiverBox').style.display = role === 'receiver' ? 'block' : 'none';
+        document.getElementById('senderBox').style.display = role === 'sender' ? 'block' : 'none';
+
+        if (role === 'receiver') {
+            initReceiver();
+        } else if (role === 'sender') {
+            initSender();
+        }
+    }
+
+    // មុខងារទូរស័ព្ទអ្នកស្តាប់ (Receiver)
+    function initReceiver() {
+        if (peer) peer.destroy();
+        peer = new Peer();
+
+        peer.on('open', (id) => {
+            document.getElementById('myReceiverId').innerText = id;
+        });
+
+        peer.on('call', (call) => {
+            call.answer();
+            call.on('stream', (remoteStream) => {
+                const audio = document.getElementById('audioPlayer');
+                audio.srcObject = remoteStream;
+                audio.play();
+
+                const badge = document.getElementById('listenStatus');
+                badge.innerText = '🟢 កំពុងភ្ជាប់ (ព្រមស្តាប់)';
+                badge.className = 'status-badge status-on';
+            });
+        });
+    }
+
+    // មុខងារទូរស័ព្ទអ្នកហៅ (Sender)
+    function initSender() {
+        if (peer) peer.destroy();
+        peer = new Peer();
+    }
+
+    function addReceiver() {
+        const input = document.getElementById('receiverIdInput');
+        const id = input.value.trim();
+        if (!id) return;
+        if (!receiverIds.includes(id)) {
+            receiverIds.push(id);
+            updateReceiverListUI();
+        }
+        input.value = '';
+    }
+
+    function updateReceiverListUI() {
+        const listEl = document.getElementById('receiverList');
+        if (receiverIds.length === 0) {
+            listEl.innerHTML = '<i style="color: #999;">នៅមិនទាន់មានទូរស័ព្ទអ្នកស្តាប់</i>';
+            return;
+        }
+        listEl.innerHTML = '';
+        receiverIds.forEach((id, index) => {
+            const li = document.createElement('li');
+            li.innerHTML = អ្នកស្តាប់ទី ${index + 1}: <b>${id}</b>;
+            listEl.appendChild(li);
+        });
+    }
+
+    async function connectAllReceivers() {
+        if (receiverIds.length === 0) {
+            alert('សូមបញ្ចូល ID ទូរស័ព្ទអ្នកស្តាប់យ៉ាងហោចណាស់ ១!');
+            return;
+        }
+
+        try {
+            // ស្នើសុំប្រើប្រាស់ មីក្រូហ្វូន
+            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            localStream.getAudioTracks()[0].enabled = false; // បិទ Mic ទុកសិន
+
+            activeCalls = [];
+            receiverIds.forEach(id => {
+                const call = peer.call(id, localStream);
+                activeCalls.push(call);
+            });
+
+            const badge = document.getElementById('sendStatus');
+            badge.innerText = 🟢 បានភ្ជាប់ជាមួយអ្នកស្តាប់ចំនួន ${receiverIds.length} គ្រឿង;
+            badge.className = 'status-badge status-on';
+            document.getElementById('micControls').style.display = 'block';
+            alert('ការតភ្ជាប់ទទួលបានជោគជ័យ! អ្នកអាចប្រើប៊ូតុងខាងក្រោមដើម្បីនិយាយបាន។');
+
+        } catch (err) {
+            alert('មិនអាចបើក មីក្រូហ្វូន បានទេ៖ ' + err.message);
+        }
+    }
+
+    // មុខងារចុចនិយាយទៅកាន់ទូរស័ព្ទទាំងអស់ក្នុងពេលតែមួយ
+    function startSpeech(e) {
+        if (e && e.cancelable) e.preventDefault();
+        if (localStream) {
+            localStream.getAudioTracks()[0].enabled = true; // បើក Mic គ្រប់ Call ទាំងអស់
+            const btn = document.getElementById('talkBtn');
+            btn.classList.add('speaking');
+            btn.innerHTML = '🔊 កំពុងផ្សាយទៅគ្រប់បន្ទប់...<br><small>លែងដៃដើម្បីឈប់</small>';
+        }
+    }
+
+    function stopSpeech(e) {
+        if (e && e.cancelable) e.preventDefault();
+        if (localStream) {
+            localStream.getAudioTracks()[0].enabled = false; // បិទ Mic វិញ
+            const btn = document.getElementById('talkBtn');
+            btn.classList.remove('speaking');
+            btn.innerHTML = '🎙️ ចុចឱ្យជាប់<br>ដើម្បីនិយាយ';
+        }
+    }
+</script>
+
+</body>
+</html>
